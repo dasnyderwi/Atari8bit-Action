@@ -1,0 +1,125 @@
+;
+; GR 1 AND 2 String Display Helper
+;
+; PrintColorChars()
+;
+; PROC to display chars in GR1/2
+; Allows for color setting, and tilt
+; 
+; David Snyder
+; January 13, 2022
+;
+; <CTRL><SHIFT> R/W TO LOAD AND SAVE
+;     ?1:*.* for a DIR of the Disc
+;  SAVE TO H6: FOR TEXT SAVE TO HDD
+
+CARD Addr=[$FC00]
+BYTE POINTER LMargn=$52
+
+BYTE stick0=632
+BYTE strig0=644
+BYTE consol=53279
+DEFINE START="6"
+DEFINE PRESSED="0"
+
+INT gXMax, gYMax  ; global X/Y Max
+
+BYTE x,y,ch, DChr
+
+Proc SetupGraphics()
+  Graphics(1+16)
+  gXmax=19 ; set extents of screen
+  gYMax=23 ; set extents of screen
+
+  SetColor(4,8,2) ; Dr. Blue Bkgrnd 
+
+  SetColor(0,4,4) ; Color 1 Red 
+  SetColor(1,12,6); Color 0  Green
+  SetColor(2,14,10); Color 3 Yellow
+  SetColor(3,8,8);   Color 2 Blue 
+RETURN
+
+Proc MyDelay(CARD dly)
+  CARD ix
+  BYTE q
+  FOR ix=0 TO dly
+    DO
+    q=1
+    OD
+RETURN
+
+Proc PrintColorChars(INT x,y,t,
+          BYTE c, BYTE ARRAY szString)
+  BYTE nLen
+  BYTE idx, ch, chD
+  BYTE mask
+  INT  xPos  ; Calculated X Position
+  nLen = szString(0); Length of String
+  FOR idx=1 to nLen  ; 0=len, start @1
+  DO  
+    mask=$00  ; default to color 0
+    IF (c=1) THEN mask=$20
+     ELSEIF (c=2) THEN mask=$80
+     ELSEIF (c=3) THEN mask=$A0
+    FI
+
+    ch = szString(idx)
+    IF ch<$40 THEN ch==-$20
+      ELSEIF ch>$7F THEN ch==-$40
+      ELSEIF ch>$5F THEN ch==-$20
+    FI             
+
+    IF ch>$1F THEN   ; color mask is dif
+      mask=$20
+      IF (c=1) THEN mask=$00
+       ELSEIF (c=2) THEN mask=$A0
+       ELSEIF (c=3) THEN mask=$80
+      FI ; endif color adjusted
+    FI ; endif ch>$1F (ASCII)
+
+    Color=(ch%mask) ; set character at color
+    ; if tilt >=5 or <=-5 then go vertical
+    IF (t>=5) THEN y==+1
+      ELSEIF (t<=-5) THEN y==-1
+      ELSE y==+t    ; allow for tilt!
+    FI     
+    ; maybe just vertical!
+    IF ((t<5) AND (t>-5)) THEN
+      xpos = x+(idx-1) ; calc xpos
+    ELSE xpos=x  ; if vertical then no change to x
+    FI
+
+    ; Make sure I am not offscreen (ERR 141)
+    IF (xpos>gXMax) THEN xpos=gXMax FI
+    IF (y>gYMax) THEN y=gYMax FI
+    IF (xpos<0) THEN x=0 FI
+    IF (y<0) THEN y=0 FI
+    Plot(xpos,y)
+
+  OD    ; NEXT idx
+
+RETURN  ; end PrintColorChars()
+
+Proc WaittoExit()
+  DO
+  UNTIL (Strig0=PRESSED)
+  OD  
+RETURN
+
+PROC Hello()
+   SetupGraphics()    
+   LMargn^=0  ; Pointer way to set Lmargin
+
+   PrintCOlorCHars(2,23,0,0,"20x24 Graphics 1")
+   PrintColorChars(2,10,0,1,"!#  0123 <=>")
+   PrintCOlorChars(2,12,1,2,"ABC Z [\^_")
+   PrintColorChars(17,14,5,3,"Color 3")
+   PrintCOlorChars(0,0,0,2,"Amazing Program!!")
+
+
+   WaitToExit()  ; Wait for FIRE Button
+   GRAPHICS(0)
+RETURN  
+
+
+
