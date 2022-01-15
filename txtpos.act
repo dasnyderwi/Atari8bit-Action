@@ -7,10 +7,11 @@
 ; Allows for color setting, and tilt
 ; 
 ; David Snyder
-; January 13, 2022
+; January 14, 2022
 ;
 ; <CTRL><SHIFT> R/W TO LOAD AND SAVE
 ;     ?1:*.* for a DIR of the Disc
+;
 ;  SAVE TO H6: FOR TEXT SAVE TO HDD
 
 CARD Addr=[$FC00]
