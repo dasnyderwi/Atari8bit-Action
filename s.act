@@ -1,0 +1,412 @@
+;
+; Survival.ACT
+;
+; Hex Based Survival Game
+; 
+; David Snyder
+; January 30, 2022
+;
+;  SAVE TO H6: FOR TEXT SAVE TO HDD
+
+CARD chbas=$2F4  ; DA had this as BYTE - in general Addresses should be CARD
+CARD memtop=$2E5, ramSet
+BYTE ARRAY dleft=[16 96 255 62 38 37 73 0]                                   
+
+BYTE ARRAY Terr(256) ; c bytes in size r,c  
+BYTE ARRAY baRiver(256) ; rivers on map
+; Spot in Array is r*16+c
+
+DEFINE zMAXRIVERS = "3"
+; Define Terrain Types
+DEFINE zCLEAR = "0"
+DEFINE zBRUSH = "1"
+DEFINE zLTWOODS = "2"
+DEFINE zWOODS = "3"
+DEFINE zROCKS = "6"
+DEFINE zSHWATER = "8"
+DEFINE zWATER = "9"
+
+BYTE gOldXPos, gOldYPos
+;
+; Main Player Structure
+;
+TYPE sPLYR=[BYTE Weight, 
+             Health,
+             RestLvl,
+             Hydration,
+             Hunger,
+             WetDry,
+             XPos, YPos,
+             Age,
+             Temperature,
+             Skill,
+             Dist,
+             Stamina,
+             Turn
+             ]
+BYTE ARRAY baPlyr(100); mem for Plyr Struct
+sPLYR POINTER gpPlyr 
+
+INCLUDE "H6:DASLIB.ACT" ; Dave LIB
+   
+Proc SetupGraphics()
+  Graphics(1+0)   ; +16 for no text window at bottom
+  ; Max Sure I have setup XMAX and YMAX properly in DASLIB.ACT
+  SetScreenExtents(1)  ; Must init DAS Library for screen extents (Gr.1)
+
+  SetColor(4,8,2) ; Dr. Blue Bkgrnd 
+
+  SetColor(0,4,4) ; Color 1 Red 
+  SetColor(1,12,6); Color 0  Green
+  SetColor(2,14,10); Color 3 Yellow - this is also the background of the text window
+  SetColor(3,8,8);   Color 2 Blue 
+RETURN  ; SetupGraphics()
+
+;
+;
+;
+Proc DrawMap()
+  BYTE r,c,z,zb,clr
+
+  FOR r=0 TO 15
+    DO
+      FOR c=0 TO 15
+        DO                   
+          IF (z>9) THEN z=0 FI
+          zb = Terr(r*16+c)
+          z = zb+'0
+          clr=baRiver(r*16+c)
+          if ((zb=8) or (zb=9)) THEN clr=2 FI  ; blue if water
+          PrintC1(c+2,r+3,clr,z)
+        OD  ; NEXT c
+    OD    ; NEXT r
+RETURN  ; DrawMap()
+
+;
+;
+;
+Proc DrawMapatPoint(BYTE c, r)
+  BYTE z,zb,clr
+ 
+  zb = Terr(r*16+c)
+  z = zb+'0
+  clr=baRiver(r*16+c)
+  if ((zb=8) or (zb=9)) THEN clr=2 FI  ; blue if water
+  PrintC1(c+2,r+3,clr,z)
+RETURN  ; DrawMapatPoint()
+
+PROC DrawPerson()
+  BYTE c,r,z,zb,clr
+  
+  DrawMapatPoint(gOldXPos, gOldYPos)
+ ; DrawMap()
+
+  c=gpPlyr.XPos
+  r=gpPlyr.YPos
+  zb = Terr(r*16+c)
+  z = zb+'0 
+  PrintC1(c+2,r+3,3,z)
+RETURN ; DrawPerson()
+
+PROC DrawPlayerCmdInfo()
+   BYTE ARRAY strng(41),strng2(41)
+   BYTE ARRAY str(41)
+   BYTE x,y,t,st
+   SCopy(strng,"POS: x, y   DAY:  x  TIME:0x:0x")
+   SCopy(strng2," x, y")
+
+   x=gpPlyr.XPos
+   Strb(x,str) ; # to String
+   st=5
+   if (x<10) THEN st=6 FI 
+   SAssign(strng, str,st,6) 
+
+  y=gpPlyr.YPos
+   Strb(y,str) ; # to String
+   st=8
+   if (y<10) THEN st=9 FI
+   SAssign(strng, str,st,9) 
+   
+   x=gOldXPos
+   Strb(x,str) ; # to String
+   st=1
+   if (x<10) THEN st=2 FI 
+   SAssign(strng2, str,st,2) 
+
+   y=gOldYPos
+   Strb(y,str) ; # to String
+   st=4
+   if (y<10) THEN st=5 FI
+   SAssign(strng2, str,st,5) 
+   PrintTW(35,0,strng2)
+
+
+   t=gpPlyr.Turn
+   Strb(t,str) ; # to String
+   st=17 ; default to start at xpos 17 (for 3 digits)
+   IF (t>9 and t<100) THEN 
+     st==+1 ; extra leading space
+   ELSEIF (t<10) THEN ; t<10
+     st==+2 ; 2 extra leadings spaces
+   FI
+   SAssign(strng, str, st,19) ; 2 leading spaces
+
+  ; TODO: Display Time of Day
+  PrintTW(0,0,strng)
+
+  SCopy(strng,"WT:xxx  HEALTH:xxx  REST:xxx")
+  PrintTW(0,1,strng)
+
+  SCopy(strng,"CRAFT  FISH  GTHR HUNT  INV  MOVE")
+  PrintTW(0,2,strng)
+
+  SCopy(strng,"STATS  USE  XPLRE  SLEEP  <>QUIT")
+  PrintTW(0,3,strng)
+
+RETURN ; DrawPlayerCmdInfo()
+
+; MoveChar()
+; Process character and if a move,
+; then adjust player coordinates
+; and save old position
+; return 1 if moved
+BYTE FUNC MoveChar(BYTE tmp)
+  BYTE bMoved = 0
+  BYTE ox, oy
+  ;
+  ; Save off current position in case I move
+  ox = gpPlyr.XPos
+  oy = gpPlyr.YPos
+
+  IF (tmp=63) THEN  ; if A 
+    IF (gpPlyr.XPos > 0) THEN
+      gPPlyr.XPos==-1
+      bMoved=1
+    FI
+  FI
+  IF (tmp=58) THEN  ; if D
+    IF (gpPlyr.XPos < 15) THEN
+      gOldXPos = gpPlyr.XPos
+      gPPlyr.XPos==+1
+      bMoved=1
+    FI
+  FI
+
+  IF (tmp=46) THEN  ; if W 
+    IF (gpPlyr.YPos > 0) THEN
+      gOldYPos = gpPlyr.YPos
+      gPPlyr.YPos==-1
+      bMoved=1
+    FI
+  FI
+  IF (tmp=62) THEN  ; if S
+    IF (gpPlyr.YPos < 15) THEN
+      gpPlyr.YPos==+1 
+      bMoved=1
+    FI
+  FI
+
+  IF (bMoved#0) THEN
+    gOldXPos = ox
+    gOldYPos = oy
+    DrawPerson()    
+    Poke(764,255);clear key
+    bMoved=0      
+  FI
+
+RETURN (bMoved) ; MoveChar()
+
+
+;
+; SetChars()
+;
+; This should be called right after
+; setting the Graphics Mode
+; If Gr 1 or 2, then   
+;      only 2 32 char sets (512 bytes)
+;   ramSet=(memtop-$200)&FE00
+; Gr 0 uses full 4 32 char sets (1K)
+;   ramSet=(memtop-$400)&FC00              
+PROC SetChars()
+  ramSet=(memtop-$400)&$FC00
+  chbas=ramSet RSH 8
+  memtop=ramSet  
+  ; ROM Character set starts at $E000
+  ; Gr.0 uses full 32*4 chars = 1024 bytes
+  ; Gr. 1/2 uses 32*2 chars = 512 bytes
+  MoveBlock(ramSet,$E000,1024)       
+  ; remap character 28 - which is < char
+  MoveBlock(ramSet+(28*8), dleft,8)
+RETURN  ; SetChars()
+
+;
+;
+;
+PROC InitChar()
+  gpPlyr=baPlyr  ; Point to mem
+  gpPlyr.Weight=175
+  gpPlyr.Age=25
+  gpPlyr.RestLvl=100
+  gpPlyr.Hydration=100
+  gpPlyr.Temperature=99
+  gpPlyr.Skill=5      ; 0-10
+  gpPlyr.Hunger=25
+  gpPlyr.WetDry=0     ; Start out Dry (0)
+  gpPlyr.Dist=0       ; Distance Travelled
+  gpPlyr.Health=100
+  gpPlyr.Stamina=100
+  gpPlyr.XPos=8       ; Start near center
+  gpPlyr.YPos=10           
+  gpPlyr.Turn=1 
+
+  gOldXPos = gpPlyr.XPos
+  gOldYPos = gpPlyr.YPos
+
+RETURN
+
+
+;
+; Initialize Map/Rivers
+;
+PROC InitRivers()
+  BYTE x,y,t, bRiver, finish
+  BYTE z,zz,xx,yy
+  INT dir
+  z = Rand(zMAXRIVERS)+1   ; 1-3
+  FOR zz = 1 to z
+    DO
+      bRiver=0
+      xx = Rand(16)  ; x pos of river
+      FOR yy=0 TO 15
+        DO
+          IF ((bRiver<>1) and (Terr(yy*16+xx)=zSHWATER)) THEN bRiver=1
+          ELSEIF (bRiver=1) THEN
+            finish = Rand(8) ; 1/8 chance of river ending
+            dir = Rand(4)  ; 50% str, else turn
+            if ((dir=0) and (xx=0)) THEN finish=0 FI ; end if going off map
+            if ((dir=0) and (xx>0)) THEN xx=xx-1 FI
+            if ((dir=3) and (xx=15)) THEN finish=0 FI ; end if going off map
+            if ((dir=3) and (xx<15)) THEN xx=xx+1 FI       
+            baRiver(yy*16+xx)=1
+          IF (finish=0) THEN bRiver=0 FI  ; 10% river ends
+          FI ; endif start on shallow
+        OD 
+    OD ; next zz
+RETURN ; InitRivers()
+;
+; Initialize Map/Terrain
+;
+PROC InitMap()
+  BYTE x,y,t
+  BYTE z,zz
+  z = Rand(3)+1   ; 1-3
+  FOR y = 0 TO 15
+  DO
+    FOR x = 0 TO 15
+    DO
+      ; First, lets put an ocean on top...
+      IF y < z THEN
+        t = zWATER
+      ELSEIF y = z THEN 
+        t = zSHWATER
+      ELSE
+        ; Else not water
+        zz =Rand(100) ; 0-99
+        t=zCLEAR
+        IF (zz>=25 and zz<50) THEN 
+          t = zBRUSH
+        ELSEIF (zz>=50 and zz<70) THEN 
+          t = zLTWOODS
+        ELSEIF (zz>=70 and zz<85) THEN 
+          t = zWOODS
+        ELSEIF (zz>=85) THEN 
+          t = zROCKS
+        FI ; endif terrain 0-99
+      FI ; else not water
+      Terr(y*16+x)=t 
+      baRiver(y*16+x)=0   ; Init to no rivers
+;   PrintB(x)
+;   Print(",")
+;   PrintB(y)
+;   Print(":")
+;    PrintB(t)
+;    Print(" ")
+    OD  ; NEXT x
+;  PrintE("")
+  ; MyDelay(500)
+  OD  ; NEXT y
+  InitRivers()
+;MyDelay(10000)
+RETURN ; InitMap()
+
+;
+; Main()
+;
+; Entry point of program
+;
+PROC Main()
+   BYTE trn,tmp
+   BYTE ARRAY str(40)
+   BYTE len
+   BYTE b1
+   INT i1
+   CARD c1
+   BYTE bMoved
+
+   InitMap()
+   SetupGraphics()    
+   SetChars()
+   Poke(crsinh,1)  ; Turn Cursor OFF
+
+   LMargn^=0  ; Pointer way to set Lmargin
+
+   PrintCCs(5,0,0,1,"WILDERNESS")
+   ;PrintCCS(6,1,0,1,"SURVIVAL")
+   ;PrintCCS(3,19,0,2,"D. Snyder 2022")
+
+   DrawMap()    
+   InitChar()         
+   DrawPerson()
+   DrawPlayerCmdInfo()  ; txt in window
+
+;
+; *** MAIN LOOP ***
+;
+   DO            ; main key input loop
+     bMoved=0 ; reset moved
+     tmp=chread   ; Peek(764)
+     Strb(tmp,str) ; # to String
+     PrintTW(36,3,str)
+     len=str(0)
+     IF (len=1) THEN PrintTW(37,3,"  ") FI
+     IF (len=2) THEN PrintTW(38,3," ") FI
+
+     ; if a key was pressed
+     IF (tmp #255) THEN     
+       MoveChar(tmp)   ; process keypress if move command 
+       DrawPlayerCmdInfo()
+       gpPlyr.Turn==+5
+     FI
+
+     IF (consol=SELECT) THEN EXIT FI  ; SELECT TO EXIT
+     UNTIL tmp=47  ; q button pressed
+   OD    ; main key input loop
+   Poke(764,255) ; clear key press
+
+  ClearTW() ; Clear Text Window
+
+   PrintTW(0,0,"Remapped < >")
+   PrintTW(9,3,"Press BUTTON to end...")
+   PrintTW(1,1,"")
+
+   WaitForBtn()  ; Wait for FIRE Button
+
+   GRAPHICS(0)
+   Poke(crsinh,0)  ; Turn Cursor ON
+
+RETURN  ; Main()
+
+
+
+
+
