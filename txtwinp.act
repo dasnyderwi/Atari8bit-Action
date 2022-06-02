@@ -1,0 +1,45 @@
+;
+; TXTWINP.ACT
+;
+; Demonstrates setting text position
+; In the text windows of a Graphics Mode
+;
+;  Dave Snyder   Jan 16, 2022
+;
+CARD txtRow=[$290] ; TXTROW
+CARD txtCol=[$291] ; TXTCOLL, TXTCOLH
+
+BYTE ptR=$290
+CARD ptC=$291
+
+DEFINE START="6"
+DEFINE PRESSED="0"
+BYTE consol=53279
+BYTE stick0=632
+BYTE strig0=644
+
+;
+; Main() Routine
+;               
+; Demonstrates positioning text in the
+; 4 row text window at the bottom of
+; Graphics modes
+;
+PROC Main()
+  Graphics(2)
+
+  ptR=0   ; Using Action Address ref.
+  ptC=10  ; Using Action address ref.
+  Print("r0,c10 Hello")
+
+  Poke(txtRow,2) ; Row 0-3
+  PokeC(txtCol,20) ; Column 0-39
+  Print("r2,c20 Hello!")
+
+  DO
+    UNTIL consol=START OR strig0=PRESSED
+  OD
+
+RETURN
+
+
